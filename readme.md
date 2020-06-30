@@ -22,6 +22,6 @@ for _ in range(3):
 ## Files:
 
 bme680.py: Drivers using floating point arithmetic  
-bme680i.py: Driver using integer arithmentic for the internal calculations according to the BOSCH datasheet. Only for the final result floating point operations are used.
-bmetest.py: Sample test script
+bme680i.py: Driver using integer arithmentic for the internal calculations according to the BOSCH datasheet. Only for the final result floating point operations are used.  
+bmetest.py: Sample test script  
 readme.md: This file
