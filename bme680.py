@@ -24,12 +24,14 @@
 # pylint: disable=too-many-instance-attributes
 
 """
-`adafruit_bme680` - Adafruit BME680 - Temperature, Humidity, Pressure & Gas Sensor
-===================================================================================
+`bme680` - BME680 - Temperature, Humidity, Pressure & Gas Sensor
+================================================================
 
-CircuitPython driver from BME680 air quality sensor
+MicroPython driver from BME680 air quality sensor, based on Adafruit_bme680
 
-* Author(s): ladyada
+* Author(s): Limor 'Ladyada' Fried of Adafruit
+             Jeff Raber (SPI support)
+             and many more contributors
 """
 
 import time
@@ -57,7 +59,8 @@ _BME280_REG_STATUS = const(0xF3)
 _BME680_REG_CTRL_MEAS = const(0x74)
 _BME680_REG_CONFIG = const(0x75)
 
-_BME680_REG_STATUS = const(0x1D)
+_BME680_REG_PAGE_SELECT = const(0x73)
+_BME680_REG_MEAS_STATUS = const(0x1D)
 _BME680_REG_PDATA = const(0x1F)
 _BME680_REG_TDATA = const(0x22)
 _BME680_REG_HDATA = const(0x25)
@@ -268,7 +271,7 @@ class Adafruit_BME680:
         self._write(_BME680_REG_CTRL_MEAS, [ctrl])
         new_data = False
         while not new_data:
-            data = self._read(_BME680_REG_STATUS, 15)
+            data = self._read(_BME680_REG_MEAS_STATUS, 15)
             new_data = data[0] & 0x80 != 0
             time.sleep(0.005)
         self._last_reading = time.ticks_ms()
@@ -321,6 +324,7 @@ class Adafruit_BME680:
 class BME680_I2C(Adafruit_BME680):
     """Driver for I2C connected BME680.
 
+        :param i2c: I2C device object
         :param int address: I2C device address
         :param bool debug: Print debug statements when True.
         :param int refresh_rate: Maximum number of readings per second. Faster property reads
@@ -337,13 +341,78 @@ class BME680_I2C(Adafruit_BME680):
         result = bytearray(length)
         self._i2c.readfrom_mem_into(self._address, register & 0xff, result)
         if self._debug:
-            print("\t$%02X => %s" % (register, hex(result)))
+            print("\t${:x} read ".format(register), " ".join(["{:02x}".format(i) for i in result]))
         return result
 
     def _write(self, register, values):
         """Writes an array of 'length' bytes to the 'register'"""
+        if self._debug:
+            print("\t${:x} write".format(register), " ".join(["{:02x}".format(i) for i in values]))
         for value in values:
             self._i2c.writeto_mem(self._address, register, bytearray([value & 0xFF]))
             register += 1
-        if self._debug:
-            print("\t$%02X <= %s" % (values[0], hex(values[1:])))
+
+
+class BME680_SPI(Adafruit_BME680):
+    """Driver for SPI connected BME680.
+
+        :param spi: SPI device object, configured
+        :param cs: Chip Select Pin object, configured to OUT mode
+        :param bool debug: Print debug statements when True.
+        :param int refresh_rate: Maximum number of readings per second. Faster property reads
+          will be from the previous reading.
+      """
+
+    def __init__(self, spi, cs, debug=False, *, refresh_rate=10):
+        self._spi = spi
+        self._cs = cs
+        self._debug = debug
+        self._cs(1)
+        super().__init__(refresh_rate=refresh_rate)
+
+    def _read(self, register, length):
+        if register != _BME680_REG_PAGE_SELECT:
+            # _BME680_REG_PAGE_SELECT exists in both SPI memory pages
+            # For all other registers, we must set the correct memory page
+            self._set_spi_mem_page(register)
+        register = (register | 0x80) & 0xFF  # Read single, bit 7 high.
+
+        try:
+            self._cs(0)
+            self._spi.write(bytearray([register]))  # pylint: disable=no-member
+            result = bytearray(length)
+            self._spi.readinto(result)  # pylint: disable=no-member
+            if self._debug:
+                print("\t${:x} read ".format(register), " ".join(["{:02x}".format(i) for i in result]))
+        except Exception as e:
+            print (e)
+            result = None
+        finally:
+            self._cs(1)
+        return result
+
+    def _write(self, register, values):
+        if register != _BME680_REG_PAGE_SELECT:
+            # _BME680_REG_PAGE_SELECT exists in both SPI memory pages
+            # For all other registers, we must set the correct memory page
+            self._set_spi_mem_page(register)
+        register &= 0x7F  # Write, bit 7 low.
+        try:
+            self._cs(0)
+            buffer = bytearray(2 * len(values))
+            for i, value in enumerate(values):
+                buffer[2 * i] = register + i
+                buffer[2 * i + 1] = value & 0xFF
+            self._spi.write(buffer)  # pylint: disable=no-member
+            if self._debug:
+                print("\t${:x} write".format(register), " ".join(["{:02x}".format(i) for i in values]))
+        except Exception as e:
+            print (e)
+        finally:
+            self._cs(1)
+
+    def _set_spi_mem_page(self, register):
+        spi_mem_page = 0x00
+        if register < 0x80:
+            spi_mem_page = 0x10
+        self._write(_BME680_REG_PAGE_SELECT, [spi_mem_page])
