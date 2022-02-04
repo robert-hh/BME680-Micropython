@@ -69,6 +69,11 @@ _BME680_REG_HDATA = const(0x25)
 _BME680_SAMPLERATES = (0, 1, 2, 4, 8, 16)
 _BME680_FILTERSIZES = (0, 1, 3, 7, 15, 31, 63, 127)
 
+_POLL_PERIOD_MS = 10
+
+_MODE_MSK = 0x03
+_MODE_POS = 0
+
 _BME680_RUNGAS = const(0x10)
 
 _LOOKUP_TABLE_1 = (2147483647.0, 2147483647.0, 2147483647.0, 2147483647.0, 2147483647.0,
@@ -354,6 +359,31 @@ class BME680_I2C(Adafruit_BME680):
         for value in values:
             self._i2c.writeto_mem(self._address, register, bytearray([value & 0xFF]))
             register += 1
+
+    # these functions are ported from Pimoroni library 
+    def set_power_mode(self, value, blocking=True):
+        """Set power mode."""
+        if value not in (0, 1):
+            raise ValueError('Power mode should be one of SLEEP_MODE or FORCED_MODE')
+
+        self.power_mode = value
+
+        self._set_bits(_BME680_REG_CTRL_MEAS, _MODE_MSK, _MODE_POS, value)
+
+        while blocking and self.get_power_mode() != self.power_mode:
+            time.sleep(_POLL_PERIOD_MS / 1000.0)
+
+    def get_power_mode(self):
+        """Get power mode."""
+        self.power_mode = self._read(_BME680_REG_CTRL_MEAS, 1)
+        return self.power_mode
+
+    def _set_bits(self, register, mask, position, value):
+        """Mask out and set one or more bits in a register."""
+        temp = self._read(register, 1)[0]
+        temp &= ~mask
+        temp |= value << position
+        self._write(register, [temp])
 
 
 class BME680_SPI(Adafruit_BME680):
