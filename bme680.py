@@ -129,8 +129,8 @@ class Adafruit_BME680:
         self._gas_range = None
         self._t_fine = None
 
-        self._last_reading = 0
-        self._min_refresh_time = 1000 / refresh_rate
+        self._last_reading = time.ticks_ms()
+        self._min_refresh_time = 1000 // refresh_rate
 
     @property
     def pressure_oversample(self):
@@ -255,9 +255,9 @@ class Adafruit_BME680:
     def _perform_reading(self):
         """Perform a single-shot reading from the sensor and fill internal data structure for
            calculations"""
-        if (time.ticks_diff(self._last_reading, time.ticks_ms()) * time.ticks_diff(0, 1)
-                < self._min_refresh_time):
-            return
+        expired = time.ticks_diff(self._last_reading, time.ticks_ms()) * time.ticks_diff(0, 1)
+        if 0 <= expired < self._min_refresh_time:
+            time_sleep_ms(self._min_refresh_time - expired)
 
         # set filter
         self._write(_BME680_REG_CONFIG, [self._filter << 2])
