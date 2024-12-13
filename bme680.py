@@ -99,38 +99,36 @@ class Adafruit_BME680:
     def __init__(self, *, refresh_rate=10):
         """Check the BME680 was found, read the coefficients and enable the sensor for continuous
            reads."""
-        self._write(_BME680_REG_SOFTRESET, [0xB6])
-        time.sleep(0.005)
 
-        # Check device ID.
-        chip_id = self._read_byte(_BME680_REG_CHIPID)
-        if chip_id != _BME680_CHIPID:
-            raise RuntimeError('Failed to find BME680! Chip ID 0x%x' % chip_id)
+        result = self.is_detected()
+        if result = 0:
+            self._read_calibration()
 
-        self._read_calibration()
+            # set up heater
+            self._write(_BME680_BME680_RES_HEAT_0, [0x73])
+            self._write(_BME680_BME680_GAS_WAIT_0, [0x65])
 
-        # set up heater
-        self._write(_BME680_BME680_RES_HEAT_0, [0x73])
-        self._write(_BME680_BME680_GAS_WAIT_0, [0x65])
+            self.sea_level_pressure = 1013.25
+            """Pressure in hectoPascals at sea level. Used to calibrate ``altitude``."""
 
-        self.sea_level_pressure = 1013.25
-        """Pressure in hectoPascals at sea level. Used to calibrate ``altitude``."""
+            # Default oversampling and filter register values.
+            self._pressure_oversample = 0b011
+            self._temp_oversample = 0b100
+            self._humidity_oversample = 0b010
+            self._filter = 0b010
 
-        # Default oversampling and filter register values.
-        self._pressure_oversample = 0b011
-        self._temp_oversample = 0b100
-        self._humidity_oversample = 0b010
-        self._filter = 0b010
+            self._adc_pres = None
+            self._adc_temp = None
+            self._adc_hum = None
+            self._adc_gas = None
+            self._gas_range = None
+            self._t_fine = None
 
-        self._adc_pres = None
-        self._adc_temp = None
-        self._adc_hum = None
-        self._adc_gas = None
-        self._gas_range = None
-        self._t_fine = None
-
-        self._last_reading = time.ticks_ms()
-        self._min_refresh_time = 1000 // refresh_rate
+            self._last_reading = time.ticks_ms()
+            self._min_refresh_time = 1000 // refresh_rate
+        else:
+            # BME680 not detected, so return None for outside validation
+            return(None)
 
     @property
     def pressure_oversample(self):
@@ -179,6 +177,24 @@ class Adafruit_BME680:
             self._filter = _BME680_FILTERSIZES[size]
         else:
             raise RuntimeError("Invalid size")
+
+    @is_detected
+    def is_detected(self):
+        """Check if the BME680 was found"""
+        self._write(_BME680_REG_SOFTRESET, [0xB6])
+        time.sleep(0.005)
+
+        # Check device ID.
+        chip_id = self._read_byte(_BME680_REG_CHIPID)
+        # No chip found at this address
+        if chip_id is None:
+            return(-1)
+        # Unsupported chip found at this address
+        if chip_id != _BME680_CHIPID:
+            return(1)
+        # Detected
+        return(0)
+
 
     @property
     def temperature(self):
@@ -316,12 +332,18 @@ class Adafruit_BME680:
 
     def _read_byte(self, register):
         """Read a byte register value and return it"""
-        return self._read(register, 1)[0]
+        result = self._read(register, 1)
+        if result is not None:
+            return result[0]
+        else:
+            return None
 
     def _read(self, register, length):
+        # Overridden by I2C or SPI during init
         raise NotImplementedError()
 
     def _write(self, register, values):
+        # Overridden by I2C or SPI during init
         raise NotImplementedError()
 
 class BME680_I2C(Adafruit_BME680):
@@ -342,18 +364,25 @@ class BME680_I2C(Adafruit_BME680):
     def _read(self, register, length):
         """Returns an array of 'length' bytes from the 'register'"""
         result = bytearray(length)
-        self._i2c.readfrom_mem_into(self._address, register & 0xff, result)
+        try:
+            self._i2c.readfrom_mem_into(self._address, register & 0xff, result)
+        except:
+            result = None
         if self._debug:
             print("\t${:x} read ".format(register), " ".join(["{:02x}".format(i) for i in result]))
-        return result
+        return(result)
 
     def _write(self, register, values):
         """Writes an array of 'length' bytes to the 'register'"""
         if self._debug:
             print("\t${:x} write".format(register), " ".join(["{:02x}".format(i) for i in values]))
         for value in values:
-            self._i2c.writeto_mem(self._address, register, bytearray([value & 0xFF]))
-            register += 1
+            try:
+                self._i2c.writeto_mem(self._address, register, bytearray([value & 0xFF]))
+                register += 1
+                return(0)
+            except:
+                return(None)
 
 
 class BME680_SPI(Adafruit_BME680):
