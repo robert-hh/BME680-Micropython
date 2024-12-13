@@ -101,7 +101,7 @@ class Adafruit_BME680:
            reads."""
 
         result = self.is_detected()
-        if result = 0:
+        if result == 0:
             self._read_calibration()
 
             # set up heater
@@ -178,24 +178,6 @@ class Adafruit_BME680:
         else:
             raise RuntimeError("Invalid size")
 
-    @is_detected
-    def is_detected(self):
-        """Check if the BME680 was found"""
-        self._write(_BME680_REG_SOFTRESET, [0xB6])
-        time.sleep(0.005)
-
-        # Check device ID.
-        chip_id = self._read_byte(_BME680_REG_CHIPID)
-        # No chip found at this address
-        if chip_id is None:
-            return(-1)
-        # Unsupported chip found at this address
-        if chip_id != _BME680_CHIPID:
-            return(1)
-        # Detected
-        return(0)
-
-
     @property
     def temperature(self):
         """The compensated temperature in degrees celsius."""
@@ -267,6 +249,22 @@ class Adafruit_BME680:
         var3 = (_LOOKUP_TABLE_2[self._gas_range] * var1) / 512
         calc_gas_res = (var3 + (var2 / 2)) / var2
         return int(calc_gas_res)
+
+    def is_detected(self):
+        """Check if the BME680 was found"""
+        self._write(_BME680_REG_SOFTRESET, [0xB6])
+        time.sleep(0.005)
+
+        # Check device ID.
+        chip_id = self._read_byte(_BME680_REG_CHIPID)
+        # No chip found at this address
+        if chip_id is None:
+            return(-1)
+        # Unsupported chip found at this address
+        if chip_id != _BME680_CHIPID:
+            return(1)
+        # Detected
+        return(0)
 
     def _perform_reading(self):
         """Perform a single-shot reading from the sensor and fill internal data structure for
