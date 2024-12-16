@@ -100,8 +100,8 @@ class Adafruit_BME680:
         """Check the BME680 was found, read the coefficients and enable the sensor for continuous
            reads."""
 
-        result = self.is_detected()
-        if result == 0:
+        self._is_detected()
+        if self._detected == True:
             self._read_calibration()
 
             # set up heater
@@ -250,21 +250,32 @@ class Adafruit_BME680:
         calc_gas_res = (var3 + (var2 / 2)) / var2
         return int(calc_gas_res)
 
-    def is_detected(self):
+    @property
+    def detected(self):
+        """Whether the BME600 was detected"""
+        return self._detected
+
+    def _is_detected(self):
         """Check if the BME680 was found"""
+        if self._debug: print("Resetting BME680")
         self._write(_BME680_REG_SOFTRESET, [0xB6])
         time.sleep(0.005)
 
+        if self._debug: print("Attempting to read from BME680")
         # Check device ID.
         chip_id = self._read_byte(_BME680_REG_CHIPID)
         # No chip found at this address
         if chip_id is None:
-            return(-1)
+            if self._debug: print("chip_id is None")
+            self._detected = False
         # Unsupported chip found at this address
-        if chip_id != _BME680_CHIPID:
-            return(1)
+        elif chip_id != _BME680_CHIPID:
+            if self._debug: print(f"chip_id is {chip_id}")
+            self._detected = False
         # Detected
-        return(0)
+        else:
+            if self._debug: print("BME680 found!")
+            self._detected = True
 
     def _perform_reading(self):
         """Perform a single-shot reading from the sensor and fill internal data structure for
