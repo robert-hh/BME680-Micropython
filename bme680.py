@@ -117,6 +117,7 @@ class Adafruit_BME680:
             self._humidity_oversample = 0b010
             self._filter = 0b010
 
+            self._last_pres = 0
             self._adc_pres = None
             self._adc_temp = None
             self._adc_hum = None
@@ -181,14 +182,22 @@ class Adafruit_BME680:
     @property
     def temperature(self):
         """The compensated temperature in degrees celsius."""
-        self._perform_reading()
-        calc_temp = (((self._t_fine * 5) + 128) / 256)
-        return calc_temp / 100
+        if self._debug:  print(f"\t Reading temperature... ", end="")
+        result = self._perform_reading()
+        if result is None:
+            if self._debug:  print(f"...temp was None!")
+            return None
+        if self._debug:  print(f"...fixing up temperature... ", end="")
+        calc_temp = (((self._t_fine * 5) + 128) / 256) / 100
+        if self._debug:  print(f"...temperature is {calc_temp} ")
+        return calc_temp
 
     @property
     def pressure(self):
         """The barometric pressure in hectoPascals"""
-        self._perform_reading()
+        result = self._perform_reading()
+        if result is None:
+            return None
         var1 = (self._t_fine / 2) - 64000
         var2 = ((var1 / 4) * (var1 / 4)) / 2048
         var2 = (var2 * self._pressure_calibration[5]) / 4
@@ -206,12 +215,24 @@ class Adafruit_BME680:
         var2 = ((calc_pres / 4) * self._pressure_calibration[7]) / 8192
         var3 = (((calc_pres / 256) ** 3) * self._pressure_calibration[9]) / 131072
         calc_pres += ((var1 + var2 + var3 + (self._pressure_calibration[6] * 128)) / 16)
-        return calc_pres/100
+        if calc_pres > 1500:
+            calc_pres = calc_pres / 100
+        if calc_pres > 630:
+            # this looks valid, so cache it and return the value
+            self._last_pres = calc_pres
+            return calc_pres
+        if self._last_pres > 0:
+            # calc value is too low, so if we have a "good" prior read, return that
+            return self._last_pres
+        # otherwise just return the weird value, and hopefully we catch up
+        return calc_pres
 
     @property
     def humidity(self):
         """The relative humidity in RH %"""
-        self._perform_reading()
+        result = self._perform_reading()
+        if result is None:
+            return None
         temp_scaled = ((self._t_fine * 5) + 128) / 256
         var1 = ((self._adc_hum - (self._humidity_calibration[0] * 16)) -
                 ((temp_scaled * self._humidity_calibration[2]) / 200))
@@ -243,7 +264,9 @@ class Adafruit_BME680:
     @property
     def gas(self):
         """The gas resistance in ohms"""
-        self._perform_reading()
+        result = self._perform_reading()
+        if result is None:
+            return None
         var1 = ((1340 + (5 * self._sw_err)) * (_LOOKUP_TABLE_1[self._gas_range])) / 65536
         var2 = ((self._adc_gas * 32768) - 16777216) + var1
         var3 = (_LOOKUP_TABLE_2[self._gas_range] * var1) / 512
@@ -280,6 +303,10 @@ class Adafruit_BME680:
     def _perform_reading(self):
         """Perform a single-shot reading from the sensor and fill internal data structure for
            calculations"""
+        if self._detected == False:
+            if self._debug:  print("\t perform_reading failed!")
+            return None
+
         expired = time.ticks_diff(self._last_reading, time.ticks_ms()) * time.ticks_diff(0, 1)
         if 0 <= expired < self._min_refresh_time:
             time.sleep_ms(self._min_refresh_time - expired)
@@ -316,6 +343,7 @@ class Adafruit_BME680:
         var3 = (var3 * self._temp_calibration[2] * 16) / 16384
 
         self._t_fine = int(var2 + var3)
+        return(True)
 
     def _read_calibration(self):
         """Read & save the calibration coefficients"""
@@ -368,7 +396,7 @@ class BME680_I2C(Adafruit_BME680):
         self._i2c = i2c
         self._address = address
         self._debug = debug
-        super().__init__(refresh_rate=refresh_rate)
+        return super().__init__(refresh_rate=refresh_rate)
 
     def _read(self, register, length):
         """Returns an array of 'length' bytes from the 'register'"""
