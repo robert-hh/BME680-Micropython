@@ -1,0 +1,9 @@
+{
+  "urls": [
+    ["bme680.py", "github:robert-hh/BME680-Micropython/bme680.py"],
+    ["bme680i.py", "github:robert-hh/BME680-Micropython/bme680i.py"],
+    ["bmetest.py", "github:robert-hh/BME680-Micropython/bmetest.py"]
+  ],
+  "version": "1.0.0",
+  "deps": []
+}
